@@ -99,7 +99,17 @@ class ChatSession(asyncssh.SSHServerSession):
         else:
             lines_to_show = self.visible_lines
 
-        recent_messages = self.messages[-lines_to_show:] if len(self.messages) > lines_to_show else self.messages
+        if self.matched:
+            filtered_messages = []
+            for msg in self.messages:
+                msg_time, role, text, show_timestamp = msg
+                if "online right now" in text or text == "finding you a stranger to chat with...":
+                    continue
+                filtered_messages.append(msg)
+        else:
+            filtered_messages = self.messages
+
+        recent_messages = filtered_messages[-lines_to_show:] if len(filtered_messages) > lines_to_show else filtered_messages
         
         for msg_time, role, text, show_timestamp in recent_messages:
             if role == "system":
@@ -151,6 +161,18 @@ class ChatSession(asyncssh.SSHServerSession):
         timestamp = self._timestamp()
         self.messages.append((timestamp, role, text, show_timestamp))
 
+    def clear_chat_and_reset(self):
+
+        self.messages = []
+        online_count = len(matchmaker.active_users)
+        self.add_message("system", f"{online_count} user{'s' if online_count != 1 else ' (just you...)'} online right now", show_timestamp=False)
+
+        self.add_message("system", "stranger disconnected.", show_timestamp=False)
+        self.add_message("system", "finding you a stranger to chat with...", show_timestamp=False)
+
+        self.add_message("system", "commands: 'save' to view full chat | 'next' for new stranger | 'quit' to exit", show_timestamp=False)
+        self.add_message("system", "" * 60, show_timestamp=False)
+
     def session_started(self):
         matchmaker.active_users.add(self)
         online_count = len(matchmaker.active_users)
@@ -158,7 +180,7 @@ class ChatSession(asyncssh.SSHServerSession):
         self.add_message("system", f"{online_count} user{'s' if online_count != 1 else ' (just you...)'} online right now", show_timestamp=False)
         self.add_message("system", "finding you a stranger to chat with...", show_timestamp=False)
         self.add_message("system", "commands: 'save' to view full chat | 'next' for new stranger | 'quit' to exit", show_timestamp=False)
-        self.add_message("system", "" * 60, show_timestamp=False)
+        self.add_message("system", "─" * 60, show_timestamp=False)
         
         self.render()
         asyncio.create_task(self.match_user())
@@ -206,15 +228,15 @@ class ChatSession(asyncssh.SSHServerSession):
 
             if msg.lower() == "next":
                 if self.partner:
-                    self.partner.add_message("system", "stranger disconnected. finding you a new stranger...")
+                    self.partner.clear_chat_and_reset()
                     self.partner.partner = None
                     self.partner.matched = False 
                     self.partner.render()
                     asyncio.create_task(self.partner.match_user())
                     
                 self.partner = None
-                self.matched = False 
-                self.add_message("system", "finding a new stranger...")
+                self.matched = False
+                self.clear_chat_and_reset()
                 self.render()
                 asyncio.create_task(self.match_user())
                 return len(data)
@@ -238,7 +260,7 @@ class ChatSession(asyncssh.SSHServerSession):
         matchmaker.remove(self)
         if self.partner:
             try:
-                self.partner.add_message("system", "stranger disconnected. finding you a new stranger...")
+                self.partner.clear_chat_and_reset()
                 self.partner.partner = None
                 self.partner.matched = False
                 self.partner.render()
