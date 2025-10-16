@@ -6,7 +6,7 @@ if you see a "HOST KEY CHANGED" warning in big scary letters, run this first: `s
 ## todo
 - ~~user count display~~
 - interest tags
-- colors
+- ~~colors~~
 - timestamps
 - connection stats (You've chatted with {self.chat_count} strangers today!) type
 - block system?
