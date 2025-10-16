@@ -167,7 +167,7 @@ class ChatSession(asyncssh.SSHServerSession):
         online_count = len(matchmaker.active_users)
         self.add_message("system", f"{online_count} user{'s' if online_count != 1 else ' (just you...)'} online right now", show_timestamp=False)
 
-        self.add_message("system", "stranger disconnected.", show_timestamp=False)
+        self.add_message("system", "\033[33mstranger disconnected.\033[0m", show_timestamp=False)
         self.add_message("system", "finding you a stranger to chat with...", show_timestamp=False)
 
         self.add_message("system", "commands: 'save' to view full chat | 'next' for new stranger | 'quit' to exit", show_timestamp=False)

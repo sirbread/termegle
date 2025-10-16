@@ -5,10 +5,11 @@ if you see a "HOST KEY CHANGED" warning in big scary letters, run this first: `s
 
 ## todo
 - ~~user count display~~
-- interest tags
+- interest tags (STRICTLY to match interests, not to be displayed, after match, say what the common insterest is)
 - ~~colors~~
 - ~~timestamps~~
-- connection stats (You've chatted with {self.chat_count} strangers today!) type
+- connection stats (You've chatted with {self.chat_count} strangers this session!) type
+- "stranger saved the chat" being seen after any stranger saves, on both ends in cyan
 - ~~save chat histroy~~
 - ~~ascii art~~
 - ~~appending "you" to the start of every message you send~~
