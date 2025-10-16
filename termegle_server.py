@@ -2,6 +2,7 @@ import asyncio
 import asyncssh
 from datetime import datetime
 from collections import defaultdict
+import random
 
 class RateLimiter:
     def __init__(self):
@@ -43,6 +44,23 @@ class Matchmaker:
 
 matchmaker = Matchmaker()
 
+#add more? https://patorjk.com/software/taag/#p=display&f=Isometric3&t=TERMEGLE&x=none&v=4&h=4&w=80&we=false
+ASCII_ARTS = [
+    """
+                  ___           ___           ___           ___           ___                         ___     
+      ___        /  /\         /  /\         /__/\         /  /\         /  /\                       /  /\    
+     /  /\      /  /:/_       /  /::\       |  |::\       /  /:/_       /  /:/_                     /  /:/_   
+    /  /:/     /  /:/ /\     /  /:/\:\      |  |:|:\     /  /:/ /\     /  /:/ /\    ___     ___    /  /:/ /\  
+   /  /:/     /  /:/ /:/_   /  /:/~/:/    __|__|:|\:\   /  /:/ /:/_   /  /:/_/::\  /__/\   /  /\  /  /:/ /:/_ 
+  /  /::\    /__/:/ /:/ /\ /__/:/ /:/___ /__/::::| \:\ /__/:/ /:/ /\ /__/:/__\/\:\ \  \:\ /  /:/ /__/:/ /:/ /
+ /__/:/\:\   \  \:\/:/ /:/ \  \:\/:::::/ \  \:\~~\__\/ \  \:\/:/ /:/ \  \:\ /~~/:/  \  \:\  /:/  \  \:\/:/ /:/
+ \__\/  \:\   \  \::/ /:/   \  \::/~~~~   \  \:\        \  \::/ /:/   \  \:\  /:/    \  \:\/:/    \  \::/ /:/ 
+      \  \:\   \  \:\/:/     \  \:\        \  \:\        \  \:\/:/     \  \:\/:/      \  \::/      \  \:\/:/  
+       \__\/    \  \::/       \  \:\        \  \:\        \  \::/       \  \::/        \__\/        \  \::/   
+                 \__\/         \__\/         \__\/         \__\/         \__\/                       \__\/    
+    """
+]
+
 class ChatSession(asyncssh.SSHServerSession):
     def __init__(self):
         self.partner = None
@@ -55,14 +73,19 @@ class ChatSession(asyncssh.SSHServerSession):
 
     def session_started(self):
         online_count = len(matchmaker.active_users) + 1
+        self._chan.write("\033[2J")
+        art = random.choice(ASCII_ARTS)
         self._chan.write("\r\n")
-        self._chan.write("═══════════════════════════════════════\r\n")
-        self._chan.write("     welcome to termegle!\r\n")
-        self._chan.write("     anon terminal chat\r\n")
-        self._chan.write("═══════════════════════════════════════\r\n")
+        self._chan.write("═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════\r\n")
+        self._chan.write(art)
+        self._chan.write("\r\n")
+        self._chan.write("═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════\r\n")
+        self._chan.write("\r\n")
+        self._chan.write("\r\n")
+
         self._chan.write(f"  {online_count} user{'s' if online_count != 1 else ' (just you...)'} online right now\r\n")
         self._chan.write("\r\n")
-        self._chan.write("finding you a stranger to chat with...\r\n")
+        self._chan.write("  finding you a stranger to chat with...\r\n")
         self._chan.write("\r\n")
         matchmaker.active_users.add(self)
         asyncio.create_task(self.match_user())
@@ -72,18 +95,14 @@ class ChatSession(asyncssh.SSHServerSession):
         if partner:
             self.partner = partner
             partner.partner = self
-            self._chan.write("─────────────────────────────────────\r\n")
             self._chan.write("  connected to a stranger!\r\n")
-            self._chan.write("─────────────────────────────────────\r\n")
-            self._chan.write("\r\ncommands:\r\n")
+            self._chan.write("\r\n  commands:\r\n")
             self._chan.write("   type to chat\r\n")
             self._chan.write("   'next' - find a new stranger\r\n")
             self._chan.write("   'quit' - exit\r\n\r\n")
             
-            partner._chan.write("─────────────────────────────────────\r\n")
             partner._chan.write("  connected to a stranger!\r\n")
-            partner._chan.write("─────────────────────────────────────\r\n")
-            partner._chan.write("\r\ncommands:\r\n")
+            partner._chan.write("\r\n commands:\r\n")
             partner._chan.write("   type to chat\r\n")
             partner._chan.write("   'next' - find a new stranger\r\n")
             partner._chan.write("   'quit' - exit\r\n\r\n")
@@ -112,6 +131,7 @@ class ChatSession(asyncssh.SSHServerSession):
                 return len(data) if isinstance(data, bytes) else len(str(data))
 
             if self.partner and msg:
+                self._chan.write(f"you: {msg}\r\n")
                 self.partner._chan.write(f"stranger: {msg}\r\n")
             elif not self.partner and msg:
                 self._chan.write(" waiting for connection...\r\n")
@@ -174,7 +194,7 @@ async def start_server():
             f.write(host_key.export_private_key().decode())
         print(f"[{datetime.now()}] saved host key to {host_key_path}")
 
-    port = 8022
+    port = 6767
 
     print(f"[{datetime.now()}] starting server on port {port}...")
 
@@ -188,8 +208,8 @@ async def start_server():
 
         print(f"\n server is running on port {port}!")
         print("\nusers can connect with:")
-        print(f"  ssh -p {port} chat@termegle.sirbread.dev") #not implemented yet!!!!
-        print(f"  ssh -p {port} chat@37.27.51.34") #nest server
+        print(f"  ssh -p {port} termegle.sirbread.dev")
+        print(f"  ssh -p {port} 37.27.51.34")
         print("\npress ctrl+c to stop")
         print("="*50 + "\n")
 
