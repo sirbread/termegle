@@ -69,6 +69,7 @@ class ChatSession(asyncssh.SSHServerSession):
         self.terminal_height = 24
         self.visible_lines = None
         self.save_mode = False
+        self.matched = False
 
     def connection_made(self, chan):
         self._chan = chan
@@ -88,9 +89,10 @@ class ChatSession(asyncssh.SSHServerSession):
     def render(self):
         self._chan.write("\033[2J\033[H")
 
-        self._chan.write("\r\n")
-        self._chan.write(self.art)
-        self._chan.write("\r\n\r\n")
+        if not self.matched:
+            self._chan.write("\r\n")
+            self._chan.write(self.art)
+            self._chan.write("\r\n\r\n")
 
         if self.visible_lines is None:
             lines_to_show = 20
@@ -99,9 +101,14 @@ class ChatSession(asyncssh.SSHServerSession):
 
         recent_messages = self.messages[-lines_to_show:] if len(self.messages) > lines_to_show else self.messages
         
-        for msg_time, role, text in recent_messages:
+        for msg_time, role, text, show_timestamp in recent_messages:
             if role == "system":
-               self._chan.write(f"\033[36m{msg_time} {text}\033[0m\r\n")
+                if show_timestamp:
+                    self._chan.write(f"\033[36m{msg_time} {text}\033[0m\r\n")
+                else:
+                    self._chan.write(f"\033[36m{text}\033[0m\r\n")
+            elif role == "matched":
+                self._chan.write(f"\033[33m{text}\033[0m\r\n")
             elif role == "stranger":
                 self._chan.write(f"\033[31m{msg_time} stranger: {text}\033[0m\r\n")
             elif role == "you":
@@ -121,9 +128,12 @@ class ChatSession(asyncssh.SSHServerSession):
         self._chan.write("=" * 60 + "\r\n")
         self._chan.write("\r\n")
 
-        for msg_time, role, text in self.messages:
-            if role == "system":
-                self._chan.write(f"{msg_time} [SYSTEM] {text}\r\n")
+        for msg_time, role, text, show_timestamp in self.messages:
+            if role == "system" or role == "matched":
+                if show_timestamp:
+                    self._chan.write(f"{msg_time} [SYSTEM] {text}\r\n")
+                else:
+                    self._chan.write(f"[SYSTEM] {text}\r\n")
             elif role == "stranger":
                 self._chan.write(f"{msg_time} [STRANGER] {text}\r\n")
             elif role == "you":
@@ -137,17 +147,19 @@ class ChatSession(asyncssh.SSHServerSession):
         self._chan.write("type 'back' to return to chat, or 'quit' to exit\r\n")
         self._chan.write("> ")
 
-    def add_message(self, role, text):
+    def add_message(self, role, text, show_timestamp=True):
         timestamp = self._timestamp()
-        self.messages.append((timestamp, role, text))
+        self.messages.append((timestamp, role, text, show_timestamp))
 
     def session_started(self):
         matchmaker.active_users.add(self)
         online_count = len(matchmaker.active_users)
-        self.add_message("system", f"{online_count} user{'s' if online_count != 1 else ' (just you...)'} online right now")
-        self.add_message("system", "finding you a stranger to chat with...")
-        self.add_message("system", "commands: 'save' to view full chat | 'next' for new stranger | 'quit' to exit")
 
+        self.add_message("system", f"{online_count} user{'s' if online_count != 1 else ' (just you...)'} online right now", show_timestamp=False)
+        self.add_message("system", "finding you a stranger to chat with...", show_timestamp=False)
+        self.add_message("system", "commands: 'save' to view full chat | 'next' for new stranger | 'quit' to exit", show_timestamp=False)
+        self.add_message("system", "" * 60, show_timestamp=False)
+        
         self.render()
         asyncio.create_task(self.match_user())
 
@@ -157,10 +169,12 @@ class ChatSession(asyncssh.SSHServerSession):
             self.partner = partner
             partner.partner = self
 
-            self.add_message("system", "connected to a stranger!")
+            self.matched = True
+            partner.matched = True
+            self.add_message("matched", "connected to a stranger!", show_timestamp=False)
             self.render()
 
-            partner.add_message("system", "connected to a stranger!")
+            partner.add_message("matched", "connected to a stranger!", show_timestamp=False)
             partner.render()
 
     def data_received(self, data, datatype):
@@ -187,16 +201,19 @@ class ChatSession(asyncssh.SSHServerSession):
                 return len(data)
 
             if self.save_mode:
-                self._chan.write("type 'back' to return to chat, or 'quit' to exit\r\n> ")
+                self._chan.write("Type 'back' to return to chat, or 'quit' to exit\r\n> ")
                 return len(data)
 
             if msg.lower() == "next":
                 if self.partner:
                     self.partner.add_message("system", "stranger disconnected. finding you a new stranger...")
-                    self.partner.render()
                     self.partner.partner = None
+                    self.partner.matched = False 
+                    self.partner.render()
                     asyncio.create_task(self.partner.match_user())
+                    
                 self.partner = None
+                self.matched = False 
                 self.add_message("system", "finding a new stranger...")
                 self.render()
                 asyncio.create_task(self.match_user())
@@ -222,8 +239,9 @@ class ChatSession(asyncssh.SSHServerSession):
         if self.partner:
             try:
                 self.partner.add_message("system", "stranger disconnected. finding you a new stranger...")
-                self.partner.render()
                 self.partner.partner = None
+                self.partner.matched = False
+                self.partner.render()
                 asyncio.create_task(self.partner.match_user())
             except Exception:
                 pass
