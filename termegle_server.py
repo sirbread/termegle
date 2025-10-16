@@ -1,4 +1,3 @@
-
 import asyncio
 import asyncssh
 from datetime import datetime
@@ -55,13 +54,15 @@ class ChatSession(asyncssh.SSHServerSession):
         return True
 
     def session_started(self):
+        online_count = len(matchmaker.active_users) + 1
         self._chan.write("\r\n")
+        self._chan.write("═══════════════════════════════════════\r\n")
+        self._chan.write("     welcome to termegle!\r\n")
+        self._chan.write("     anon terminal chat\r\n")
+        self._chan.write("═══════════════════════════════════════\r\n")
+        self._chan.write(f"  {online_count} user{'s' if online_count != 1 else ' (just you...)'} online right now\r\n")
         self._chan.write("\r\n")
-        self._chan.write("   welcome to termegle! \r\n")
-        self._chan.write("   anon terminal chat\r\n")
-        self._chan.write("\r\n")
-        self._chan.write("\r\n")
-        self._chan.write("finding you a stranger to chat with...there may be no one online\r\n")
+        self._chan.write("finding you a stranger to chat with...\r\n")
         self._chan.write("\r\n")
         matchmaker.active_users.add(self)
         asyncio.create_task(self.match_user())
@@ -71,17 +72,17 @@ class ChatSession(asyncssh.SSHServerSession):
         if partner:
             self.partner = partner
             partner.partner = self
-            self._chan.write("\r\n")
-            self._chan.write(" connected to a stranger!\r\n")
-            self._chan.write("\r\n")
+            self._chan.write("─────────────────────────────────────\r\n")
+            self._chan.write("  connected to a stranger!\r\n")
+            self._chan.write("─────────────────────────────────────\r\n")
             self._chan.write("\r\ncommands:\r\n")
             self._chan.write("   type to chat\r\n")
             self._chan.write("   'next' - find a new stranger\r\n")
             self._chan.write("   'quit' - exit\r\n\r\n")
-
-            partner._chan.write("\r\n")
-            partner._chan.write(" connected to a stranger!\r\n")
-            partner._chan.write("\r\n")
+            
+            partner._chan.write("─────────────────────────────────────\r\n")
+            partner._chan.write("  connected to a stranger!\r\n")
+            partner._chan.write("─────────────────────────────────────\r\n")
             partner._chan.write("\r\ncommands:\r\n")
             partner._chan.write("   type to chat\r\n")
             partner._chan.write("   'next' - find a new stranger\r\n")
@@ -95,7 +96,7 @@ class ChatSession(asyncssh.SSHServerSession):
                 msg = str(data).strip()
 
             if msg.lower() == 'quit':
-                self._chan.write("\r\cya! \r\n")
+                self._chan.write("\r\ncya!\r\n")
                 self._chan.close()
                 return len(data) if isinstance(data, bytes) else len(str(data))
 
@@ -150,7 +151,7 @@ class TermegleServer(asyncssh.SSHServer):
         return True
 
     def validate_password(self, username, password):
-        print(f"[{datetime.now()}]  Login: {username}")
+        print(f"[{datetime.now()}]  login: {username}")
         return True
 
     def session_requested(self):
@@ -194,5 +195,5 @@ if __name__ == '__main__':
         asyncio.run(start_server())
     except KeyboardInterrupt:
         print("\n\n" + "="*50)
-        print("  Server stopped ")
+        print("  server stopped ")
         print("="*50)
