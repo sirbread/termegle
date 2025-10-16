@@ -220,6 +220,11 @@ class ChatSession(asyncssh.SSHServerSession):
 
             if msg.lower() == "save" and not self.save_mode:
                 self.show_full_chat()
+                t = self._timestamp()
+                self.add_message("system", f"{t} you saved the chat log. (stranger can see this)", show_timestamp=False)
+                if self.partner:
+                    self.partner.add_message("system", f"{t} the stranger saved the chat log.", show_timestamp=False)
+                    self.partner.render()
                 return len(data)
 
             if self.save_mode:

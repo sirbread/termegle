@@ -7,7 +7,8 @@ if you see a "HOST KEY CHANGED" warning in big scary letters, this means the ser
 - interest tags (STRICTLY to match interests, not to be displayed, after match, say what the common insterest is)
 - inactive user timeout
 - connection stats (You've chatted with {self.chat_count} strangers this session!) type
-- "stranger saved the chat" being seen after any stranger saves, on both ends in cyan
+- fix self connection race condition but allow for talking to yourself in 2 terminals
+- ~~"stranger saved the chat" being seen after any stranger saves, on both ends in cyan~~
 - ~~colors~~
 - ~~timestamps~~
 - ~~user count display~~
