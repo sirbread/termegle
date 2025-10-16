@@ -145,14 +145,13 @@ class TermegleServer(asyncssh.SSHServer):
         print(f"[{datetime.now()}]  new connection from {ip} (active: {len(matchmaker.active_users)})")
 
     def begin_auth(self, username):
-        return True
-
+        return False
+    
+    def public_key_auth_supported(self):
+        return False
+    
     def password_auth_supported(self):
-        return True
-
-    def validate_password(self, username, password):
-        print(f"[{datetime.now()}]  login: {username}")
-        return True
+        return False
 
     def session_requested(self):
         return ChatSession()
@@ -161,9 +160,20 @@ async def start_server():
     print("\n" + "="*50)
     print("  starting termegle ")
     print("="*50)
-    print(f"[{datetime.now()}] generating ssh host key...")
+    
+    host_key_path = '/home/sirbread/termegle_host_key'
+    
+    try:
+        print(f"[{datetime.now()}] loading ssh host key...")
+        host_key = asyncssh.read_private_key(host_key_path)
+        print(f"[{datetime.now()}] loaded existing host key!")
+    except:
+        print(f"[{datetime.now()}] generating new ssh host key...")
+        host_key = asyncssh.generate_private_key('ssh-rsa')
+        with open(host_key_path, 'w') as f:
+            f.write(host_key.export_private_key().decode())
+        print(f"[{datetime.now()}] saved host key to {host_key_path}")
 
-    host_key = asyncssh.generate_private_key('ssh-rsa')
     port = 8022
 
     print(f"[{datetime.now()}] starting server on port {port}...")
