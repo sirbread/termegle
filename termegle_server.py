@@ -64,6 +64,8 @@ ASCII_ARTS = [
 class ChatSession(asyncssh.SSHServerSession):
     def __init__(self):
         self.partner = None
+        self.messages = [] 
+        self.art = random.choice(ASCII_ARTS)
 
     def connection_made(self, chan):
         self._chan = chan
@@ -71,21 +73,32 @@ class ChatSession(asyncssh.SSHServerSession):
     def shell_requested(self):
         return True
 
+    def _timestamp(self):
+        return datetime.now().strftime("[%H:%M]")
+
+    def render(self):
+        self._chan.write("\033[2J\033[H")
+
+        self._chan.write("\r\n")
+        self._chan.write(self.art)
+        self._chan.write("\r\n\r\n\r\n")
+
+        for role, text in self.messages[-20:]:
+            ts = self._timestamp()
+            if role == "system":
+                self._chan.write(f"\033[36m{ts} {text}\033[0m\r\n")
+            elif role == "stranger":
+                self._chan.write(f"\033[31m{ts} stranger: {text}\033[0m\r\n")
+            elif role == "you":
+                self._chan.write(f"\033[34m{ts} you: {text}\033[0m\r\n")
+        self._chan.write("\r\n> ")
+
     def session_started(self):
-        online_count = len(matchmaker.active_users) + 1
-        self._chan.write("\033[2J")  # clear
-        art = random.choice(ASCII_ARTS)
-
-        self._chan.write("\r\n")
-        self._chan.write("═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════\r\n")
-        self._chan.write(art)
-        self._chan.write("\r\n")
-        self._chan.write("═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════\r\n\r\n")
-
-        self._chan.write(f"\033[36m  {online_count} user{'s' if online_count != 1 else ' (just you...)'} online right now\033[0m\r\n\r\n")
-        self._chan.write("\033[36m  finding you a stranger to chat with...\033[0m\r\n\r\n")
-
         matchmaker.active_users.add(self)
+        online_count = len(matchmaker.active_users)
+        self.messages.append(("system", f"{online_count} user{'s' if online_count != 1 else ' (just you...)'} online right now"))
+        self.messages.append(("system", "finding you a stranger to chat with..."))
+        self.render()
         asyncio.create_task(self.match_user())
 
     async def match_user(self):
@@ -94,64 +107,60 @@ class ChatSession(asyncssh.SSHServerSession):
             self.partner = partner
             partner.partner = self
 
-            msg = "\033[36m──────────────────────────────────────────\r\n  connected to a stranger!\r\n──────────────────────────────────────────\033[0m\r\n\r\n"
-            help_text = (
-                "\033[36m commands:\033[0m\r\n"
-                "  type to chat\r\n"
-                "  'next' - find a new stranger\r\n"
-                "  'quit' - exit\r\n\r\n"
-            )
+            self.messages.append(("system", "connected to a stranger!"))
+            self.render()
 
-            self._chan.write(help_text + msg)
-            partner._chan.write(help_text + msg)
-
-    def _timestamp(self):
-        return datetime.now().strftime("[%H:%M]")
+            partner.messages.append(("system", "connected to a stranger!"))
+            partner.render()
 
     def data_received(self, data, datatype):
         try:
-            if isinstance(data, bytes):
-                msg = data.decode('utf-8', errors='ignore').strip()
-            else:
-                msg = str(data).strip()
-
+            msg = data.decode("utf-8", errors="ignore").strip() if isinstance(data, bytes) else str(data).strip()
             if not msg:
                 return len(data)
 
-            if msg.lower() == 'quit':
-                self._chan.write(f"\r\n\033[36m{self._timestamp()} cya!\033[0m\r\n")
+            if msg.lower() == "quit":
+                self.messages.append(("system", "cya!"))
+                self.render()
                 self._chan.close()
                 return len(data)
 
-            if msg.lower() == 'next':
+            if msg.lower() == "next":
                 if self.partner:
-                    self.partner._chan.write(f"\r\n\033[36m{self._timestamp()} stranger disconnected.\r\nfinding you a new stranger...\033[0m\r\n\r\n")
+                    self.partner.messages.append(("system", "stranger disconnected. finding you a new stranger..."))
+                    self.partner.render()
                     self.partner.partner = None
                     asyncio.create_task(self.partner.match_user())
                 self.partner = None
-                self._chan.write(f"\r\n\033[36m{self._timestamp()} finding a new stranger...\033[0m\r\n\r\n")
+                self.messages.append(("system", "finding a new stranger..."))
+                self.render()
                 asyncio.create_task(self.match_user())
                 return len(data)
 
             if self.partner:
-                self.partner._chan.write(f"\033[31m{self._timestamp()} stranger: {msg}\033[0m\r\n")
+                self.messages.append(("you", msg))
+                self.render()
+                self.partner.messages.append(("stranger", msg))
+                self.partner.render()
             else:
-                self._chan.write(f"\033[36m{self._timestamp()} waiting for connection...\033[0m\r\n")
+                self.messages.append(("system", "waiting for connection..."))
+                self.render()
 
         except Exception as e:
-            print(f"[{datetime.now()}]  error in data_received: {e}")
+            print(f"[{datetime.now()}] error in data_received: {e}")
 
         return len(data)
 
     def connection_lost(self, exc):
-        print(f"[{datetime.now()}]  user disconnected")
+        print(f"[{datetime.now()}] user disconnected")
         matchmaker.remove(self)
         if self.partner:
             try:
-                self.partner._chan.write(f"\r\n\033[36m{self._timestamp()} stranger disconnected.\r\n finding you a new stranger...\033[0m\r\n\r\n")
+                self.partner.messages.append(("system", "stranger disconnected. finding you a new stranger..."))
+                self.partner.render()
                 self.partner.partner = None
                 asyncio.create_task(self.partner.match_user())
-            except:
+            except Exception:
                 pass
 
 class TermegleServer(asyncssh.SSHServer):
