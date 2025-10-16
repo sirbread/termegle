@@ -73,8 +73,9 @@ class ChatSession(asyncssh.SSHServerSession):
 
     def session_started(self):
         online_count = len(matchmaker.active_users) + 1
-        self._chan.write("\033[2J")
+        self._chan.write("\033[2J")  # clear
         art = random.choice(ASCII_ARTS)
+
         self._chan.write("\r\n")
         self._chan.write("═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════\r\n")
         self._chan.write(art)
@@ -104,6 +105,9 @@ class ChatSession(asyncssh.SSHServerSession):
             self._chan.write(help_text + msg)
             partner._chan.write(help_text + msg)
 
+    def _timestamp(self):
+        return datetime.now().strftime("[%H:%M]")
+
     def data_received(self, data, datatype):
         try:
             if isinstance(data, bytes):
@@ -111,25 +115,28 @@ class ChatSession(asyncssh.SSHServerSession):
             else:
                 msg = str(data).strip()
 
+            if not msg:
+                return len(data)
+
             if msg.lower() == 'quit':
-                self._chan.write("\r\n\033[36mcya!\033[0m\r\n")
+                self._chan.write(f"\r\n\033[36m{self._timestamp()} cya!\033[0m\r\n")
                 self._chan.close()
                 return len(data)
 
             if msg.lower() == 'next':
                 if self.partner:
-                    self.partner._chan.write("\r\n\033[36m stranger disconnected.\r\nfinding you a new stranger...\033[0m\r\n\r\n")
+                    self.partner._chan.write(f"\r\n\033[36m{self._timestamp()} stranger disconnected.\r\nfinding you a new stranger...\033[0m\r\n\r\n")
                     self.partner.partner = None
                     asyncio.create_task(self.partner.match_user())
                 self.partner = None
-                self._chan.write("\r\n\033[36m finding a new stranger...\033[0m\r\n\r\n")
+                self._chan.write(f"\r\n\033[36m{self._timestamp()} finding a new stranger...\033[0m\r\n\r\n")
                 asyncio.create_task(self.match_user())
                 return len(data)
 
-            if self.partner and msg:
-                self.partner._chan.write(f"\033[31mstranger: {msg}\033[0m\r\n")
-            elif not self.partner and msg:
-                self._chan.write("\033[36m waiting for connection...\033[0m\r\n")
+            if self.partner:
+                self.partner._chan.write(f"\033[31m{self._timestamp()} stranger: {msg}\033[0m\r\n")
+            else:
+                self._chan.write(f"\033[36m{self._timestamp()} waiting for connection...\033[0m\r\n")
 
         except Exception as e:
             print(f"[{datetime.now()}]  error in data_received: {e}")
@@ -141,7 +148,7 @@ class ChatSession(asyncssh.SSHServerSession):
         matchmaker.remove(self)
         if self.partner:
             try:
-                self.partner._chan.write("\r\n\033[36m stranger disconnected.\r\n finding you a new stranger...\033[0m\r\n\r\n")
+                self.partner._chan.write(f"\r\n\033[36m{self._timestamp()} stranger disconnected.\r\n finding you a new stranger...\033[0m\r\n\r\n")
                 self.partner.partner = None
                 asyncio.create_task(self.partner.match_user())
             except:

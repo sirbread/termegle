@@ -7,7 +7,7 @@ if you see a "HOST KEY CHANGED" warning in big scary letters, run this first: `s
 - ~~user count display~~
 - interest tags
 - ~~colors~~
-- timestamps
+- ~~timestamps~~
 - connection stats (You've chatted with {self.chat_count} strangers today!) type
 - block system?
 - save chat histroy
