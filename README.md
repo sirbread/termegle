@@ -14,7 +14,7 @@ and you're in! no downloading any binary required since it's an SSH server.
 - anon chat with strangers :)
 - ssh into the server, no downloads needed
 - interest tags: enter your interests on startup (comma-separated) for better matches
-- - chat saving
+- chat saving
 - - but also save snitching
 - colored messages (cyan for system, yellow for connections, red for strangers, blue for you)
 - user count of how many are online
