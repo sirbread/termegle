@@ -70,6 +70,7 @@ class ChatSession(asyncssh.SSHServerSession):
         self.visible_lines = None
         self.save_mode = False
         self.matched = False
+        self.last_active = datetime.now()
 
     def connection_made(self, chan):
         self._chan = chan
@@ -184,6 +185,7 @@ class ChatSession(asyncssh.SSHServerSession):
         
         self.render()
         asyncio.create_task(self.match_user())
+        asyncio.create_task(self.goon_sesh())
 
     async def match_user(self):
         partner = await matchmaker.find_match(self)
@@ -199,12 +201,37 @@ class ChatSession(asyncssh.SSHServerSession):
             partner.add_message("matched", "connected to a stranger!", show_timestamp=False)
             partner.render()
 
+    async def goon_sesh(self):
+        warned = False
+        while True:
+            await asyncio.sleep(30)
+            if self._chan.is_closing():
+                break
+            inactive_time = (datetime.now() - self.last_active).total_seconds()
+            if inactive_time > 240 and not warned:
+                self.add_message("system", "you'll be disconnected in 1 minute due to inactivity.", show_timestamp=False)
+                self.render()
+                warned = True
+            elif inactive_time > 300:
+                self.add_message("system", "you were disconnected for being inactive for 5 minutes.", show_timestamp=False)
+                self.render()
+                self._chan.write("\r\ninactivity timeout - disconnected.\r\n")
+                self._chan.close()
+                if self.partner:
+                    self.partner.add_message("system", "the stranger was disconnected for inactivity.", show_timestamp=False)
+                    self.partner.render()
+                    self.partner.clear_chat_and_reset()
+                    self.partner.partner = None
+                    self.partner.matched = False
+                    asyncio.create_task(self.partner.match_user())
+                break
+
     def data_received(self, data, datatype):
         try:
             msg = data.decode("utf-8", errors="ignore").strip() if isinstance(data, bytes) else str(data).strip()
             if not msg:
                 return len(data)
-
+            self.last_active = datetime.now()
             if msg.lower() == "quit":
                 if not self.save_mode:
                     self.add_message("system", "cya!")
