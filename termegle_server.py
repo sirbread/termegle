@@ -23,25 +23,61 @@ rate_limiter = RateLimiter()
 
 class Matchmaker:
     def __init__(self):
-        self.waiting = []
+        self.waiting = {}
         self.active_users = set()
 
-    async def find_match(self, session):
-        if self.waiting:
-            partner = self.waiting.pop(0)
-            if partner is session:
-                self.waiting.append(session)
-                return None
-            print(f"[{datetime.now()}]  matched two users! active: {len(self.active_users)}")
-            return partner
-        else:
-            self.waiting.append(session)
-            print(f"[{datetime.now()}]  user waiting... ({len(self.waiting)} in queue)")
-            return None
+    async def find_match(self, session, interests):
+        if session in self.waiting:
+            del self.waiting[session]
+
+        #first try to find someone with common interests (prefer who joined first)
+        best_match = None
+        best_common = set()
+        earliest_time = None
+
+        for potential_partner, (partner_interests, join_time) in list(self.waiting.items()):
+            if potential_partner is session:
+                continue
+
+            common = interests & partner_interests
+
+            if common:
+                #if we have common interests, prefer the person whos been waiting longest
+                if not best_match or join_time < earliest_time:
+                    best_match = potential_partner
+                    best_common = common
+                    earliest_time = join_time
+
+        #if we found someone with common interests, match with them
+        if best_match:
+            del self.waiting[best_match]
+            print(f"[{datetime.now()}]  matched two users with {len(best_common)} common interest(s)! active: {len(self.active_users)}")
+            return best_match, best_common
+
+        #fifo, match with the person whos been waiting the longest 
+        if len(self.waiting) > 0:
+            oldest_session = None
+            oldest_time = None
+
+            for potential_partner, (partner_interests, join_time) in list(self.waiting.items()):
+                if potential_partner is session:
+                    continue
+                if oldest_session is None or join_time < oldest_time:
+                    oldest_session = potential_partner
+                    oldest_time = join_time
+            if oldest_session:
+                del self.waiting[oldest_session]
+                print(f"[{datetime.now()}]  matched two users (no common interests, FIFO)! active: {len(self.active_users)}")
+                return oldest_session, set()
+
+        #no match found add to waiting with current time
+        self.waiting[session] = (interests, datetime.now())
+        print(f"[{datetime.now()}]  user waiting... ({len(self.waiting)} in queue)")
+        return None, set()
 
     def remove(self, session):
         if session in self.waiting:
-            self.waiting.remove(session)
+            del self.waiting[session]
         if session in self.active_users:
             self.active_users.remove(session)
 
@@ -75,6 +111,9 @@ class ChatSession(asyncssh.SSHServerSession):
         self.matched = False
         self.last_active = datetime.now()
         self.chat_count = 0
+        self.interests = set()
+        self.awaiting_interests = True
+        self.interest_buffer = ""
 
     def connection_made(self, chan):
         self._chan = chan
@@ -85,7 +124,7 @@ class ChatSession(asyncssh.SSHServerSession):
     def terminal_size_changed(self, width, height, pixwidth, pixheight):
         self.terminal_height = height if height > 0 else 24
         self.visible_lines = max(5, self.terminal_height - 18)
-        if not self.save_mode:
+        if not self.save_mode and not self.awaiting_interests:
             self.render()
 
     def _timestamp(self):
@@ -185,21 +224,21 @@ class ChatSession(asyncssh.SSHServerSession):
 
     def session_started(self):
         matchmaker.active_users.add(self)
-        online_count = len(matchmaker.active_users)
 
-        self.add_message("system", f"{online_count} user{'s' if online_count != 1 else ' (just you...)'} online right now", show_timestamp=False)
-        self.add_message("system", "finding you a stranger to chat with...", show_timestamp=False)
-        self.add_message("system", "commands: 'save' to view full chat | 'next' for new stranger | 'quit' to exit", show_timestamp=False)
-        self.add_message("system", "─" * 78, show_timestamp=False)
-
-        self.render()
-        asyncio.create_task(self.match_user())
-        asyncio.create_task(self.goon_sesh())
+        self._chan.write("\033[2J\033[H")
+        self._chan.write("\r\n")
+        self._chan.write(self.art)
+        self._chan.write("\r\n\r\n")
+        self._chan.write("\033[36mwhat are your interests? enter to skip (separate with commas)\033[0m\r\n")
+        self._chan.write("\033[36mexample: gaming, sports, pb and j\033[0m\r\n\r\n")
+        self._chan.write("> ")
 
     async def match_user(self):
-        if self in matchmaker.waiting:
-            matchmaker.waiting.remove(self)
-        partner = await matchmaker.find_match(self)
+        if self in [s for s in matchmaker.waiting.keys()]:
+            del matchmaker.waiting[self]
+
+        partner, common_interests = await matchmaker.find_match(self, self.interests)
+
         if partner:
             self.partner = partner
             partner.partner = self
@@ -209,6 +248,19 @@ class ChatSession(asyncssh.SSHServerSession):
             self.chat_count += 1
             partner.chat_count += 1
             self.add_message("matched", "connected to a stranger!", show_timestamp=False)
+
+            if common_interests:
+                interests_list = sorted(list(common_interests))
+                if len(interests_list) == 1:
+                    interests_text = f"you both like {interests_list[0]}."
+                elif len(interests_list) == 2:
+                    interests_text = f"you both like {interests_list[0]} and {interests_list[1]}."
+                else:
+                    interests_text = f"you both like {', '.join(interests_list[:-1])}, and {interests_list[-1]}."
+                
+                self.add_message("matched", interests_text, show_timestamp=False)
+                partner.add_message("matched", interests_text, show_timestamp=False)
+            
             self.render()
 
             partner.add_message("matched", "connected to a stranger!", show_timestamp=False)
@@ -242,6 +294,25 @@ class ChatSession(asyncssh.SSHServerSession):
     def data_received(self, data, datatype):
         try:
             msg = data.decode("utf-8", errors="ignore").strip() if isinstance(data, bytes) else str(data).strip()
+            
+            if self.awaiting_interests:
+                if msg:
+                    raw_interests = [i.strip().lower() for i in msg.split(',')]
+                    self.interests = set(i for i in raw_interests if i and len(i) > 0)
+                
+                self.awaiting_interests = False
+                
+                online_count = len(matchmaker.active_users)
+                self.add_message("system", f"{online_count} user{'s' if online_count != 1 else ' (just you...)'} online right now", show_timestamp=False)
+                self.add_message("system", "finding you a stranger to chat with...", show_timestamp=False)
+                self.add_message("system", "commands: 'save' to view full chat | 'next' for new stranger | 'quit' to exit", show_timestamp=False)
+                self.add_message("system", "" * 78, show_timestamp=False)
+                
+                self.render()
+                asyncio.create_task(self.match_user())
+                asyncio.create_task(self.goon_sesh())
+                return len(data)
+            
             if not msg:
                 return len(data)
             self.last_active = datetime.now()
