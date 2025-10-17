@@ -165,17 +165,20 @@ class ChatSession(asyncssh.SSHServerSession):
         timestamp = self._timestamp()
         self.messages.append((timestamp, role, text, show_timestamp))
 
-    def clear_chat_and_reset(self):
+    def clear_chat_and_reset(self, disconnect_reason=None):
 
         self.messages = []
         online_count = len(matchmaker.active_users)
         self.add_message("system", f"{online_count} user{'s' if online_count != 1 else ' (just you...)'} online right now", show_timestamp=False)
 
-        self.add_message("system", "\033[33mstranger disconnected.\033[0m", show_timestamp=False)
+        if disconnect_reason:
+            self.add_message("matched", disconnect_reason, show_timestamp=False)
+        else:
+            self.add_message("matched", "stranger disconnected.", show_timestamp=False)
         self.add_message("system", "finding you a stranger to chat with...", show_timestamp=False)
 
         self.add_message("system", "commands: 'save' to view full chat | 'next' for new stranger | 'quit' to exit", show_timestamp=False)
-        self.add_message("system", "" * 60, show_timestamp=False)
+        self.add_message("system", "─" * 60, show_timestamp=False)
 
     def session_started(self):
         matchmaker.active_users.add(self)
@@ -223,11 +226,11 @@ class ChatSession(asyncssh.SSHServerSession):
                 self._chan.write("\r\ninactivity timeout - disconnected.\r\n")
                 self._chan.close()
                 if self.partner:
-                    self.partner.add_message("system", "the stranger was disconnected for inactivity.", show_timestamp=False)
-                    self.partner.render()
-                    self.partner.clear_chat_and_reset()
+                    matchmaker.remove(self)
+                    self.partner.clear_chat_and_reset(disconnect_reason="the stranger was disconnected for inactivity.")
                     self.partner.partner = None
                     self.partner.matched = False
+                    self.partner.render()
                     asyncio.create_task(self.partner.match_user())
                 break
 
@@ -296,14 +299,15 @@ class ChatSession(asyncssh.SSHServerSession):
         print(f"[{datetime.now()}] user disconnected (had {len(self.messages)} messages)")
         matchmaker.remove(self)
         if self.partner:
-            try:
-                self.partner.clear_chat_and_reset()
-                self.partner.partner = None
-                self.partner.matched = False
-                self.partner.render()
-                asyncio.create_task(self.partner.match_user())
-            except Exception:
-                pass
+            if self.partner.matched:  #only handle if not already handled (like inactivity disconnect) (some great wording)
+                try:
+                    self.partner.clear_chat_and_reset()
+                    self.partner.partner = None
+                    self.partner.matched = False
+                    self.partner.render()
+                    asyncio.create_task(self.partner.match_user())
+                except Exception:
+                    pass
 
 class TermegleServer(asyncssh.SSHServer):
     def connection_made(self, conn):
