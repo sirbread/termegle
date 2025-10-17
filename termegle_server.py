@@ -29,6 +29,9 @@ class Matchmaker:
     async def find_match(self, session):
         if self.waiting:
             partner = self.waiting.pop(0)
+            if partner is session:
+                self.waiting.append(session)
+                return None
             print(f"[{datetime.now()}]  matched two users! active: {len(self.active_users)}")
             return partner
         else:
@@ -188,6 +191,8 @@ class ChatSession(asyncssh.SSHServerSession):
         asyncio.create_task(self.goon_sesh())
 
     async def match_user(self):
+        if self in matchmaker.waiting:
+            matchmaker.waiting.remove(self)
         partner = await matchmaker.find_match(self)
         if partner:
             self.partner = partner
@@ -329,7 +334,7 @@ async def start_server():
     print("  starting termegle ")
     print("="*50)
     
-    host_key_path = '/home/sirbread/termegle_host_key'
+    host_key_path = 'termegle_host_key'
     
     try:
         print(f"[{datetime.now()}] loading ssh host key...")
