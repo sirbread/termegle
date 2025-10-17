@@ -74,6 +74,7 @@ class ChatSession(asyncssh.SSHServerSession):
         self.save_mode = False
         self.matched = False
         self.last_active = datetime.now()
+        self.chat_count = 0
 
     def connection_made(self, chan):
         self._chan = chan
@@ -116,6 +117,8 @@ class ChatSession(asyncssh.SSHServerSession):
         recent_messages = filtered_messages[-lines_to_show:] if len(filtered_messages) > lines_to_show else filtered_messages
         
         for msg_time, role, text, show_timestamp in recent_messages:
+            if role == "system" and text == "─" * 60 and self.chat_count > 0: #some really reliable code
+                self._chan.write(f"\033[36myou've chatted with {self.chat_count} stranger{'s' if self.chat_count != 1 else ''} this session!\033[0m\r\n")
             if role == "system":
                 if show_timestamp:
                     self._chan.write(f"\033[36m{msg_time} {text}\033[0m\r\n")
@@ -203,6 +206,8 @@ class ChatSession(asyncssh.SSHServerSession):
 
             self.matched = True
             partner.matched = True
+            self.chat_count += 1
+            partner.chat_count += 1
             self.add_message("matched", "connected to a stranger!", show_timestamp=False)
             self.render()
 
