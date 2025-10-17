@@ -107,7 +107,7 @@ class ChatSession(asyncssh.SSHServerSession):
             filtered_messages = []
             for msg in self.messages:
                 msg_time, role, text, show_timestamp = msg
-                if "online right now" in text or text == "finding you a stranger to chat with...":
+                if "online right now" in text or text == "finding you a stranger to chat with..." or text == "stranger disconnected." or text == "the stranger was disconnected for inactivity.":
                     continue
                 filtered_messages.append(msg)
         else:
