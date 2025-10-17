@@ -26,16 +26,39 @@ class Matchmaker:
         self.waiting = {}
         self.active_users = set()
 
-    async def find_match(self, session, interests):
+    async def find_match(self, session, interests, from_next=False):
         if session in self.waiting:
             del self.waiting[session]
 
-        #first try to find someone with common interests (prefer who joined first)
+        # priority 1, if this person clicked "next", match them with anyone immediately
+        if from_next and len(self.waiting) > 0:
+            # find the first available person (fifo from regular waiting queue)
+            oldest_session = None
+            oldest_time = None
+
+            for potential_partner, (partner_interests, join_time, partner_from_next) in list(self.waiting.items()):
+                if potential_partner is session:
+                    continue
+                # skip people who also clicked "next" they'll get their own match 
+                if partner_from_next:
+                    continue
+                if oldest_session is None or join_time < oldest_time:
+                    oldest_session = potential_partner
+                    oldest_time = join_time
+
+            if oldest_session:
+                partner_interests_set = self.waiting[oldest_session][0]
+                common = interests & partner_interests_set
+                del self.waiting[oldest_session]
+                print(f"[{datetime.now()}]  matched 'next' clicker with waiting user! active: {len(self.active_users)}")
+                return oldest_session, common, False
+        
+        # priority 2, try to find someone with common interests (prefer who joined first)
         best_match = None
         best_common = set()
         earliest_time = None
 
-        for potential_partner, (partner_interests, join_time) in list(self.waiting.items()):
+        for potential_partner, (partner_interests, join_time, partner_from_next) in list(self.waiting.items()):
             if potential_partner is session:
                 continue
 
@@ -52,28 +75,30 @@ class Matchmaker:
         if best_match:
             del self.waiting[best_match]
             print(f"[{datetime.now()}]  matched two users with {len(best_common)} common interest(s)! active: {len(self.active_users)}")
-            return best_match, best_common
-
-        #fifo, match with the person whos been waiting the longest 
+            return best_match, best_common, False
+            
+        # priority 3, match with the person who's been waiting the LONGEST (fifo)
         if len(self.waiting) > 0:
             oldest_session = None
             oldest_time = None
 
-            for potential_partner, (partner_interests, join_time) in list(self.waiting.items()):
+            for potential_partner, (partner_interests, join_time, partner_from_next) in list(self.waiting.items()):
                 if potential_partner is session:
                     continue
                 if oldest_session is None or join_time < oldest_time:
                     oldest_session = potential_partner
                     oldest_time = join_time
             if oldest_session:
+                partner_interests_set = self.waiting[oldest_session][0]
+                common = interests & partner_interests_set
                 del self.waiting[oldest_session]
                 print(f"[{datetime.now()}]  matched two users (no common interests, FIFO)! active: {len(self.active_users)}")
-                return oldest_session, set()
+                return oldest_session, common, False
 
-        #no match found add to waiting with current time
-        self.waiting[session] = (interests, datetime.now())
-        print(f"[{datetime.now()}]  user waiting... ({len(self.waiting)} in queue)")
-        return None, set()
+        # no match found, add to waiting with current time and "from_next" flag
+        self.waiting[session] = (interests, datetime.now(), from_next)
+        print(f"[{datetime.now()}]  user waiting... ({len(self.waiting)} in queue, from_next={from_next})")
+        return None, set(), False
 
     def remove(self, session):
         if session in self.waiting:
@@ -97,6 +122,11 @@ ASCII_ARTS = [
       \  \:\   \  \:\/:/     \  \:\        \  \:\        \  \:\/:/     \  \:\/:/      \  \::/      \  \:\/:/  
        \__\/    \  \::/       \  \:\        \  \:\        \  \::/       \  \::/        \__\/        \  \::/   
                  \__\/         \__\/         \__\/         \__\/         \__\/                       \__\/    
+                      _        _ _     _            _                                 _ 
+                     | |_ __ _| | |__ | |_ ___   __| |_ _ _ __ _ _ _  __ _ ___ _ _ __| |
+                     |  _/ _` | | / / |  _/ _ \ (_-<  _| '_/ _` | ' \/ _` / -_) '_(_-<_|
+                     \__\__,_|_|_\_\  \__\___/ /__/\__|_| \__,_|_||_\__, \___|_| /__)(_)
+                                                                     |___/              
     """
 ]
 
@@ -233,11 +263,11 @@ class ChatSession(asyncssh.SSHServerSession):
         self._chan.write("\033[36mexample: gaming, sports, pb and j\033[0m\r\n\r\n")
         self._chan.write("> ")
 
-    async def match_user(self):
+    async def match_user(self, from_next=False):
         if self in [s for s in matchmaker.waiting.keys()]:
             del matchmaker.waiting[self]
 
-        partner, common_interests = await matchmaker.find_match(self, self.interests)
+        partner, common_interests, show_next_warning = await matchmaker.find_match(self, self.interests, from_next)
 
         if partner:
             self.partner = partner
@@ -265,6 +295,30 @@ class ChatSession(asyncssh.SSHServerSession):
 
             partner.add_message("matched", "connected to a stranger!", show_timestamp=False)
             partner.render()
+
+    async def handle_next(self):
+        old_partner = self.partner
+
+        #disconnect
+        if old_partner:
+            old_partner.partner = None
+            old_partner.matched = False
+
+        #repeat @s
+        self.partner = None
+        self.matched = False
+        self.clear_chat_and_reset()
+        self.render()
+
+        #you get matched first 
+        await self.match_user(from_next=True)
+        await asyncio.sleep(0.1)
+
+        #now ex can find someone
+        if old_partner:
+            old_partner.clear_chat_and_reset()
+            old_partner.render()
+            asyncio.create_task(old_partner.match_user(from_next=False))
 
     async def goon_sesh(self):
         warned = False
@@ -306,10 +360,10 @@ class ChatSession(asyncssh.SSHServerSession):
                 self.add_message("system", f"{online_count} user{'s' if online_count != 1 else ' (just you...)'} online right now", show_timestamp=False)
                 self.add_message("system", "finding you a stranger to chat with...", show_timestamp=False)
                 self.add_message("system", "commands: 'save' to view full chat | 'next' for new stranger | 'quit' to exit", show_timestamp=False)
-                self.add_message("system", "" * 78, show_timestamp=False)
+                self.add_message("system", "─" * 78, show_timestamp=False)
                 
                 self.render()
-                asyncio.create_task(self.match_user())
+                asyncio.create_task(self.match_user(from_next=False))
                 asyncio.create_task(self.goon_sesh())
                 return len(data)
             
@@ -343,18 +397,7 @@ class ChatSession(asyncssh.SSHServerSession):
                 return len(data)
 
             if msg.lower() == "next":
-                if self.partner:
-                    self.partner.clear_chat_and_reset()
-                    self.partner.partner = None
-                    self.partner.matched = False 
-                    self.partner.render()
-                    asyncio.create_task(self.partner.match_user())
-                    
-                self.partner = None
-                self.matched = False
-                self.clear_chat_and_reset()
-                self.render()
-                asyncio.create_task(self.match_user())
+                asyncio.create_task(self.handle_next())
                 return len(data)
 
             if self.partner:
