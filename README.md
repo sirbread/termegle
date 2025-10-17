@@ -1,7 +1,5 @@
 # termegle
-run `ssh -p 6767 termegle.sirbread.dev` <br>
-you'll see a security prompt, which is normal, type in yes <br>
-if you see a "HOST KEY CHANGED" warning in big scary letters, this means the server restarted, run this first: `ssh-keygen -R "[37.27.51.34]:8022"` <br>
+run `ssh -p 6767 termegle.sirbread.dev` and you're in :D <br>
 
 ## todo
 - interest tags (STRICTLY to match interests, not to be displayed, after match, say what the common insterest is)
