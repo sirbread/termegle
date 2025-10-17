@@ -1,17 +1,26 @@
 <div align="center">
   <img width="883" height="272" alt="image" src="https://github.com/user-attachments/assets/568d518a-7b0a-445b-a45c-d5c34410e2df" />
 </div>
-
-talk to strangers, in the terminal!  
-(omegle, but in the terminal)  
-(haha get it terminal? omegle? termegle...?)
-
+<br>
+<br>
+talk to strangers, in the terminal!  <br>
+<br>
 to run the current instance that's live right now, run this:  
 `ssh -p 6767 termegle.sirbread.dev`  
 and you're in! no downloading any binary required since it's an SSH server.  
 
 ## features
-- bwoosh
+- tui based
+- anon chat with strangers :)
+- ssh into the server, no downloads needed
+- interest tags: enter your interests on startup (comma-separated) for better matches
+- - chat saving
+- - but also save snitching
+- colored messages (cyan for system, yellow for connections, red for strangers, blue for you)
+- user count of how many are online
+- see how many people you talked with
+- rate limiting/idle kicking
+- absolutley NO lazy loading (there's full screen refreshes every screen update)
 
 ## run ts
 1. clone thy repo
